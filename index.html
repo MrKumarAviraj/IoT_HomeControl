@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro IoT Command Console</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        
+        body {
+            background-color: #1a1f29;
+            background-image: 
+                radial-gradient(rgba(30, 80, 150, 0.3) 1px, transparent 0),
+                linear-gradient(90deg, #161a22 2px, transparent 2px),
+                linear-gradient(#161a22 2px, transparent 2px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 40px 40px, 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+            background-position: 0 0, 10px 10px, 10px 10px, 10px 10px, 10px 10px;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .console-chassis {
+            background: linear-gradient(135deg, #e5a93b 0%, #c68a1e 100%); 
+            border: 8px solid #3e2a0a;
+            border-radius: 14px;
+            box-shadow: 0 35px 70px rgba(0,0,0,0.9), inset 0 4px 0 rgba(255,255,255,0.4), inset 0 -6px 0 rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 850px;
+            padding: 35px;
+            position: relative;
+        }
+
+        .screw {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            background: radial-gradient(circle, #aaa 20%, #666 70%, #222 100%);
+            border-radius: 50%;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.6);
+        }
+        .screw::before { content: ''; position: absolute; top: 6px; left: 2px; width: 10px; height: 2px; background: #222; transform: rotate(15deg); }
+        .screw.tl { top: 12px; left: 12px; }
+        .screw.tr { top: 12px; right: 12px; }
+        .screw.bl { bottom: 12px; left: 12px; }
+        .screw.br { bottom: 12px; right: 12px; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 4px ridge #3e2a0a;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+        h1 { color: #1a1204; font-size: 24px; text-shadow: 1px 1px 0 rgba(255,255,255,0.4); font-weight: 900; letter-spacing: 1px; }
+
+        .btn-config {
+            background: #14161d; color: #ffaa00; border: 2px solid #3e2a0a; padding: 6px 14px;
+            cursor: pointer; font-weight: bold; font-family: monospace; font-size: 11px;
+            box-shadow: 0 4px 0 #000; border-radius: 4px;
+        }
+        .btn-config:active { transform: translateY(4px); box-shadow: 0 0px 0 #000; }
+
+        .panel-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 25px; }
+        @media (max-width: 700px) { .panel-grid { grid-template-columns: 1fr; } }
+
+        .panel-section {
+            background: #232833;
+            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 10px 10px;
+            border: 4px solid #14161d;
+            border-radius: 6px;
+            padding: 20px;
+            box-shadow: inset 0 5px 12px rgba(0,0,0,0.7), 0 3px 0 rgba(255,255,255,0.15);
+            position: relative;
+        }
+        .panel-section::after { content: "REF_SPEC: MOD-08B // BUS_WSS"; position: absolute; bottom: 4px; right: 8px; font-size: 7px; color: #4c566a; font-weight: bold; }
+
+        .section-title {
+            color: #d8dee9; font-size: 12px; margin-bottom: 20px; text-align: center;
+            text-transform: uppercase; font-weight: bold; letter-spacing: 1.5px; border-bottom: 2px dashed #3b4252; padding-bottom: 8px;
+        }
+
+        .switches-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        
+        .switch-container {
+            display: flex; flex-direction: column; align-items: center;
+            background: linear-gradient(to bottom, #2e3440 0%, #242933 100%);
+            padding: 15px 10px; border-radius: 4px; border: 2px solid #1a1c23; box-shadow: 0 6px 10px rgba(0,0,0,0.4);
+        }
+        .switch-label { font-size: 11px; font-weight: bold; margin-top: 6px; margin-bottom: 12px; color: #eceff4; text-align: center; height: 15px; text-transform: uppercase; }
+        
+        .icon-container { width: 24px; height: 24px; fill: #4c566a; transition: fill 0.1s; }
+        .switch-container:has(.rocker-switch.on) .icon-container { fill: #e5a93b; filter: drop-shadow(0 0 4px rgba(229,169,59,0.5)); }
+
+        .rocker-switch { width: 50px; height: 75px; background: #15171c; border-radius: 6px; position: relative; cursor: pointer; box-shadow: inset 0 6px 12px rgba(0,0,0,0.9); border: 2px solid #232833; }
+        .rocker-switch .cap { position: absolute; width: 100%; height: 55%; left: 0; transition: all 0.08s ease-in-out; border-radius: 4px; }
+        .rocker-switch .cap.top { top: 0; background: linear-gradient(to bottom, #a63232 0%, #731d1d 100%); box-shadow: inset 0 2px 2px rgba(255,255,255,0.4), 0 6px 0 #4d1111; z-index: 2; }
+        .rocker-switch .cap.bottom { bottom: 0; background: #260d0d; height: 45%; }
+        
+        .rocker-switch.on .cap.top { height: 45%; background: #0f2614; top: 0; }
+        .rocker-switch.on .cap.bottom { height: 55%; background: linear-gradient(to bottom, #29a341 0%, #196627 100%); bottom: 0; z-index: 2; box-shadow: inset 0 -2px 2px rgba(255,255,255,0.4), 0 -6px 0 #0f3d17; }
+
+        .led-indicator { width: 12px; height: 12px; border-radius: 50%; background-color: #2b1414; margin-top: 15px; border: 2px solid #111; box-shadow: inset 0 2px 2px rgba(0,0,0,0.8); transition: all 0.1s; }
+        .rocker-switch.on + .led-indicator { background-color: #39ff14; box-shadow: 0 0 14px #39ff14, inset 0 2px 2px white; }
+
+        .crt-screen { background-color: #090d0a; border: 4px inset #14161d; border-radius: 4px; padding: 15px; height: 120px; color: #39ff14; text-shadow: 0 0 6px rgba(57,255,20,0.8); position: relative; overflow: hidden; }
+        .crt-screen::before { content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.3) 50%); background-size: 100% 4px; pointer-events: none; z-index: 5; }
+        .telemetry-row { font-size: 13px; margin-bottom: 12px; font-weight: bold; }
+        .telemetry-row span { float: right; color: #a4ff9e; font-size: 14px; }
+
+        .slider-panel-container { display: flex; flex-direction: column; align-items: center; padding: 10px 0; position: relative; }
+        .slider-track-groove { width: 100%; height: 44px; background: #11141a; border-radius: 6px; border: 3px inset #1a1c23; box-shadow: inset 0 4px 8px rgba(0,0,0,0.9); position: relative; display: flex; align-items: center; padding: 0 8px; }
+        .calibration-scale { width: 100%; display: flex; justify-content: space-between; padding: 0 10px; margin-top: 8px; color: #7b889b; font-size: 10px; font-weight: bold; }
+        
+        .retro-slider { -webkit-appearance: none; appearance: none; width: 100%; background: transparent; outline: none; position: relative; z-index: 4; }
+        .retro-slider::before { content: ''; position: absolute; left: 0; right: 0; top: calc(50% - 2px); height: 4px; background: #ffaa00; box-shadow: 0 0 5px #ffaa00; pointer-events: none; }
+        
+        .retro-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 32px; height: 36px;
+            background: linear-gradient(90deg, #666 0%, #d4d7df 30%, #888e99 50%, #d4d7df 70%, #444 100%);
+            border: 2px solid #111; border-radius: 4px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.6), inset 0 2px 0 rgba(255,255,255,0.6);
+        }
+
+        .slider-value-box { margin-top: 15px; font-size: 15px; font-weight: bold; color: #39ff14; background: #090d0a; padding: 6px 16px; border-radius: 4px; border: 2px inset #14161d; box-shadow: inset 0 2px 4px rgba(0,0,0,0.8); min-width: 80px; text-align: center; }
+
+        /* Setup Popup Overlay */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 100; }
+        .modal.open { opacity: 1; pointer-events: auto; }
+        .modal-content { background: #cbd0d8; padding: 25px; border-radius: 8px; border: 4px solid #3e2a0a; width: 90%; max-width: 420px; font-weight: bold; font-family: monospace; }
+        .modal-content label { display: block; margin-top: 12px; font-size: 11px; color: #222; text-transform: uppercase; }
+        .modal-content input { width: 100%; padding: 8px; margin-top: 4px; font-family: monospace; border: 2px solid #555; background: #fff; color: #000; }
+        .modal-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="console-chassis">
+    <div class="screw tl"></div><div class="screw tr"></div><div class="screw bl"></div><div class="screw br"></div>
+
+    <header>
+        <h1>SYSTEM MATRIX CONTROLLER</h1>
+        <button class="btn-config" onclick="toggleModal(true)">SYSTEM CONFIG</button>
+    </header>
+
+    <div class="panel-grid">
+        <div class="panel-section">
+            <div class="section-title">Manual Override Rails</div>
+            <div class="switches-grid">
+                
+                <div class="switch-container">
+                    <div class="icon-container"><svg viewBox="0 0 24 24"><path d="M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4c1.6,0 3,1.1 3.4,2.6c-0.9-0.4-1.9-0.6-3.4-0.6c-1.5,0-2.5,0.2-3.4,0.6C9,5.1 10.4,4 12,4M4,12c0-1.6 1.1-3 2.6-3.4C6.2,9.5 6,10.5 6,12c0,1.5 0.2,2.5 0.6,3.4C5.1,14.9 4,13.6 4,12M12,20c-1.6,0-3-1.1-3.4-2.6c0.9,0.4 1.9,0.6 3.4,0.6c1.5,0 2.5-0.2 3.4-0.6c-0.4,1.5-1.8,2.6-12,2.6M20,12c0,1.6-1.1,3-2.6,3.4c0.4-0.9 0.6-1.9 0.6-3.4c0-1.5-0.2-2.5-0.6-3.4c1.5,0.4 2.6,1.8 2.6,3.4Z"/></svg></div>
+                    <div class="switch-label">Room-1 Fan</div>
+                    <div class="rocker-switch" id="sw-relay1" onclick="handleSwitchClick('home/relay1')"><div class="cap top"></div><div class="cap bottom"></div></div>
+                    <div class="led-indicator"></div>
+                </div>
+
+                <div class="switch-container">
+                    <div class="icon-container"><svg viewBox="0 0 24 24"><path d="M12,11A1,1 0 0,0 11,12A1,1 0 0,0 12,13A1,1 0 0,0 13,12A1,1 0 0,0 12,11M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4c1.6,0 3,1.1 3.4,2.6c-0.9-0.4-1.9-0.6-3.4-0.6c-1.5,0-2.5,0.2-3.4,0.6C9,5.1 10.4,4 12,4M4,12c0-1.6 1.1-3 2.6-3.4C6.2,9.5 6,10.5 6,12c0,1.5 0.2,2.5 0.6,3.4C5.1,14.9 4,13.6 4,12M12,20c-1.6,0-3-1.1-3.4-2.6c0.9,0.4 1.9,0.6 3.4,0.6c1.5,0 2.5-0.2 3.4-0.6c-0.4,1.5-1.8,2.6-12,2.6M20,12c0,1.6-1.1,3-2.6,3.4c0.4-0.9 0.6-1.9 0.6-3.4c0-1.5-0.2-2.5-0.6-3.4c1.5,0.4 2.6,1.8 2.6,3.4Z"/></svg></div>
+                    <div class="switch-label">Room-2 Fan</div>
+                    <div class="rocker-switch" id="sw-relay2" onclick="handleSwitchClick('home/relay2')"><div class="cap top"></div><div class="cap bottom"></div></div>
+                    <div class="led-indicator"></div>
+                </div>
+
+                <div class="switch-container">
+                    <div class="icon-container"><svg viewBox="0 0 24 24"><path d="M12,2A7,7 0 0,0 5,9C5,11.38 6.19,13.47 8,14.74V17A1,1 0 0,0 9,18H15A1,1 0 0,0 16,17V14.74C17.81,13.47 19,11.38 19,9A7,7 0 0,0 12,2M9,21A1,1 0 0,0 10,22H14A1,1 0 0,0 15,21V20H9V21Z"/></svg></div>
+                    <div class="switch-label">Light 1</div>
+                    <div class="rocker-switch" id="sw-relay3" onclick="handleSwitchClick('home/relay3')"><div class="cap top"></div><div class="cap bottom"></div></div>
+                    <div class="led-indicator"></div>
+                </div>
+
+                <div class="switch-container">
+                    <div class="icon-container"><svg viewBox="0 0 24 24"><path d="M9,13H15V15H9V13M9,9H15V11H9V9M18,4V2H16V4H14V2H12V4H10V2H8V4H6V2H4V4A2,2 0 0,0 2,6V8H4V10H2V12H4V14H2V16H4V18H2V20A2,2 0 0,0 4,22H6V24H8V22H10V24H12V22H14V24H16V22H18V24H20V22A2,2 0 0,0 4,22H6V24H8V22H10V24H12V22H14V24H16V22H18V24H20V22A2,2 0 0,0 22,20V18H20V14H22V12H20V10H22V8H20V6A2,2 0 0,0 18,4M18,18H6V6H18V18Z"/></svg></div>
+                    <div class="switch-label">Aux Output</div>
+                    <div class="rocker-switch" id="sw-relay4" onclick="handleSwitchClick('home/relay4')"><div class="cap top"></div><div class="cap bottom"></div></div>
+                    <div class="led-indicator"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:25px;">
+            <div class="panel-section">
+                <div class="section-title">Telemetry Monitoring</div>
+                <div class="crt-screen">
+                    <div class="telemetry-row">SYS_LINK_STATUS: <span id="status-text" style="color:#ff3333">OFFLINE</span></div>
+                    <div class="telemetry-row">TEMPERATURE:    <span id="temp-val">--.- °C</span></div>
+                    <div class="telemetry-row">HUMIDITY:       <span id="hum-val">--.- %</span></div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="section-title">Actuator Servo Control Matrix</div>
+                <div class="slider-panel-container">
+                    <div class="slider-track-groove">
+                        <input type="range" min="0" max="180" value="0" class="retro-slider" id="servo-slider" oninput="handleSliderInput(this.value)">
+                    </div>
+                    <div class="calibration-scale">
+                        <span>0°</span><span>45°</span><span>90°</span><span>135°</span><span>180°</span>
+                    </div>
+                    <div class="slider-value-box"><span id="fader-angle">0</span>°</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="config-modal">
+    <div class="modal-content">
+        <h3 style="border-bottom:2px solid #3e2a0a; padding-bottom:5px; color:#1a1204;">Broker Configuration</h3>
+        <label>HiveMQ Host Cluster URL</label>
+        <input type="text" id="cfg-host" placeholder="xxxxxx.s1.eu.hivemq.cloud">
+        <label>WebSockets Port (HiveMQ Cloud Default)</label>
+        <input type="number" id="cfg-port" value="8884">
+        <label>MQTT Username</label>
+        <input type="text" id="cfg-user">
+        <label>MQTT Password</label>
+        <input type="password" id="cfg-pass">
+        <div class="modal-actions">
+            <button class="btn-config" style="background:#888; color:#fff;" onclick="toggleModal(false)">Cancel</button>
+            <button class="btn-config" style="background:#2da846; color:#fff;" onclick="saveConfig()">Save & Connect</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let client = null;
+    let lastSliderTxTime = 0;
+    const topicToIdMap = {
+        'home/relay1': 'sw-relay1',
+        'home/relay2': 'sw-relay2',
+        'home/relay3': 'sw-relay3',
+        'home/relay4': 'sw-relay4'
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+        if(localStorage.getItem('mqtt_host')) {
+            connectMQTT();
+        } else {
+            toggleModal(true);
+        }
+    });
+
+    function toggleModal(show) {
+        const modal = document.getElementById('config-modal');
+        if(show) {
+            document.getElementById('cfg-host').value = localStorage.getItem('mqtt_host') || '';
+            document.getElementById('cfg-port').value = localStorage.getItem('mqtt_port') || '8884';
+            document.getElementById('cfg-user').value = localStorage.getItem('mqtt_user') || '';
+            document.getElementById('cfg-pass').value = localStorage.getItem('mqtt_pass') || '';
+            modal.classList.add('open');
+        } else {
+            modal.classList.remove('open');
+        }
+    }
+
+    function saveConfig() {
+        localStorage.setItem('mqtt_host', document.getElementById('cfg-host').value.trim());
+        localStorage.setItem('mqtt_port', document.getElementById('cfg-port').value.trim());
+        localStorage.setItem('mqtt_user', document.getElementById('cfg-user').value.trim());
+        localStorage.setItem('mqtt_pass', document.getElementById('cfg-pass').value.trim());
+        toggleModal(false);
+        connectMQTT();
+    }
+
+    function connectMQTT() {
+        const host = localStorage.getItem('mqtt_host');
+        const port = parseInt(localStorage.getItem('mqtt_port')) || 8884;
+        const user = localStorage.getItem('mqtt_user');
+        const pass = localStorage.getItem('mqtt_pass');
+
+        if(!host) return;
+        updateStatus("CONNECTING...", "#ffaa00");
+
+        const clientId = "web_matrix_" + Math.random().toString(16).substr(2, 8);
+        // HiveMQ Cloud requires secure wss paths to /mqtt
+        client = new Paho.MQTT.Client("wss://" + host + ":" + port + "/mqtt", clientId);
+
+        client.onConnectionLost = (responseObj) => {
+            updateStatus("DISCONNECTED", "#ff3333");
+            setTimeout(connectMQTT, 5000); 
+        };
+
+        client.onMessageArrived = (message) => {
+            const topic = message.destinationName;
+            const payload = message.payloadString.trim();
+
+            if(topicToIdMap[topic]) {
+                const element = document.getElementById(topicToIdMap[topic]);
+                if(payload === "1") {
+                    element.classList.add('on');
+                } else if(payload === "0") {
+                    element.classList.remove('on');
+                }
+            } else if(topic === "home/servo") {
+                const angle = parseInt(payload);
+                if(!isNaN(angle)) {
+                    document.getElementById('servo-slider').value = angle;
+                    document.getElementById('fader-angle').innerText = angle;
+                }
+            } else if(topic === "home/telemetry") {
+                try {
+                    const data = JSON.parse(payload);
+                    if(data.temp) document.getElementById('temp-val').innerText = parseFloat(data.temp).toFixed(1) + " °C";
+                    if(data.hum) document.getElementById('hum-val').innerText = parseFloat(data.hum).toFixed(1) + " %";
+                } catch(e) {}
+            }
+        };
+
+        let options = {
+            useSSL: true,
+            timeout: 5,
+            onSuccess: () => {
+                updateStatus("ONLINE", "#39ff14");
+                // Subscribe to sync real-time state across multiple browser devices
+                client.subscribe("home/relay1");
+                client.subscribe("home/relay2");
+                client.subscribe("home/relay3");
+                client.subscribe("home/relay4");
+                client.subscribe("home/servo");
+                client.subscribe("home/telemetry");
+            },
+            onFailure: (err) => {
+                updateStatus("CONN_FAIL", "#ff3333");
+                console.error(err);
+            }
+        };
+
+        if(user) options.userName = user;
+        if(pass) options.password = pass;
+
+        client.connect(options);
+    }
+
+    function updateStatus(text, color) {
+        const el = document.getElementById('status-text');
+        el.innerText = text;
+        el.style.color = color;
+        el.style.textShadow = `0 0 6px ${color}`;
+    }
+
+    function handleSwitchClick(topic) {
+        if(!client || !client.isConnected()) return;
+        const targetId = Object.keys(topicToIdMap).find(key => topicToIdMap[key] === topicToIdMap[topic]);
+        const element = document.getElementById(topicToIdMap[topic]);
+        
+        // Optimistic toggle flip - will auto-correct if network drops
+        const nextState = element.classList.contains('on') ? "0" : "1";
+        
+        const message = new Paho.MQTT.Message(nextState);
+        message.destinationName = topic;
+        message.retained = true; // Retain on broker to maintain cross-device persistence
+        client.send(message);
+    }
+
+    function handleSliderInput(val) {
+        document.getElementById('fader-angle').innerText = val;
+        
+        const now = Date.now();
+        // Throttle output slider events to max 1 message per 120ms to protect broker limits
+        if (now - lastSliderTxTime > 120) {
+            publishSliderValue(val);
+            lastSliderTxTime = now;
+        }
+    }
+
+    function publishSliderValue(val) {
+        if(client && client.isConnected()) {
+            const message = new Paho.MQTT.Message(val.toString());
+            message.destinationName = "home/servo";
+            message.retained = true; // Retain servo angle so state stays fixed on reconnect
+            client.send(message);
+        }
+    }
+</script>
+</body>
+</html>
