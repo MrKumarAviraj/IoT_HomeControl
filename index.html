@@ -193,6 +193,8 @@
                     <div class="telemetry-row">SYS_LINK_STATUS: <span id="status-text" style="color:#ff3333">OFFLINE</span></div>
                     <div class="telemetry-row">TEMPERATURE:    <span id="temp-val">--.- °C</span></div>
                     <div class="telemetry-row">HUMIDITY:       <span id="hum-val">--.- %</span></div>
+                    <div class="telemetry-row">BROKER_LINK: <span id="status-text" style="color:#ff3333">OFFLINE</span></div>
+                    <div class="telemetry-row">HARDWARE_NODE: <span id="hw-status" style="color:#ff3333">UNKNOWN</span></div>
                 </div>
             </div>
 
@@ -305,6 +307,16 @@
                     document.getElementById('servo-slider').value = angle;
                     document.getElementById('fader-angle').innerText = angle;
                 }
+                // Add this condition to your message handler
+              else if(topic === "home/status") {
+                const hwSpan = document.getElementById('hw-status');
+                if (payload === "ONLINE") {
+                hwSpan.innerText = "ONLINE";
+                hwSpan.style.color = "#39ff14"; // Green
+                } else {
+                hwSpan.innerText = "OFFLINE";
+                hwSpan.style.color = "#ff3333"; // Red
+                        }
             } else if(topic === "home/telemetry") {
                 try {
                     const data = JSON.parse(payload);
@@ -319,6 +331,8 @@
             timeout: 5,
             onSuccess: () => {
                 updateStatus("ONLINE", "#39ff14");
+                // Inside onSuccess() in connectMQTT(), add:
+                client.subscribe("home/status");
                 // Subscribe to sync real-time state across multiple browser devices
                 client.subscribe("home/relay1");
                 client.subscribe("home/relay2");
