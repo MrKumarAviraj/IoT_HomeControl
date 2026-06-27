@@ -177,7 +177,7 @@
                 </div>
 
                 <div class="switch-container">
-                    <div class="icon-container"><svg viewBox="0 0 24 24"><path d="M9,13H15V15H9V13M9,9H15V11H9V9M18,4V2H16V4H14V2H12V4H10V2H8V4H6V2H4V4A2,2 0 0,0 2,6V8H4V10H2V12H4V14H2V16H4V18H2V20A2,2 0 0,0 4,22H6V24H8V22H10V24H12V22H14V24H16V22H18V24H20V22A2,2 0 0,0 4,22H6V24H8V22H10V24H12V22H14V24H16V22H18V24H20V22A2,2 0 0,0 22,20V18H20V14H22V12H20V10H22V8H20V6A2,2 0 0,0 18,4M18,18H6V6H18V18Z"/></svg></div>
+                    <div class="icon-container"><svg viewBox="0 0 24 24"><path d="M9,13H15V15H9V13M9,9H15V11H9V9M18,4V2H16V4H14V2H12V4H10V2H8V4H6V2H4V4A2,2 0 0,0 2,6V8H4V10H2V12H4V14H2V16H4V18H2V20A2,2 0 0,0 4,22H6V24H8V22H10V24H12V22H14V24H16V22H18V24H20V22A2,2 0 0,0 22,20V18H20V14H22V12H20V10H22V8H20V6A2,2 0 0,0 18,4M18,18H6V6H18V18Z"/></svg></div>
                     <div class="switch-label">Aux Output</div>
                     <div class="rocker-switch" id="sw-relay4" onclick="handleSwitchClick('home/relay4')"><div class="cap top"></div><div class="cap bottom"></div></div>
                     <div class="led-indicator"></div>
@@ -190,11 +190,10 @@
             <div class="panel-section">
                 <div class="section-title">Telemetry Monitoring</div>
                 <div class="crt-screen">
-                    <div class="telemetry-row">SYS_LINK_STATUS: <span id="status-text" style="color:#ff3333">OFFLINE</span></div>
-                    <div class="telemetry-row">TEMPERATURE:    <span id="temp-val">--.- °C</span></div>
-                    <div class="telemetry-row">HUMIDITY:       <span id="hum-val">--.- %</span></div>
                     <div class="telemetry-row">BROKER_LINK: <span id="status-text" style="color:#ff3333">OFFLINE</span></div>
                     <div class="telemetry-row">HARDWARE_NODE: <span id="hw-status" style="color:#ff3333">UNKNOWN</span></div>
+                    <div class="telemetry-row">TEMPERATURE:    <span id="temp-val">--.- °C</span></div>
+                    <div class="telemetry-row">HUMIDITY:       <span id="hum-val">--.- %</span></div>
                 </div>
             </div>
 
@@ -282,7 +281,6 @@
         updateStatus("CONNECTING...", "#ffaa00");
 
         const clientId = "web_matrix_" + Math.random().toString(16).substr(2, 8);
-        // HiveMQ Cloud requires secure wss paths to /mqtt
         client = new Paho.MQTT.Client("wss://" + host + ":" + port + "/mqtt", clientId);
 
         client.onConnectionLost = (responseObj) => {
@@ -307,17 +305,19 @@
                     document.getElementById('servo-slider').value = angle;
                     document.getElementById('fader-angle').innerText = angle;
                 }
-                // Add this condition to your message handler
-              else if(topic === "home/status") {
+            } 
+            // Fixed the nesting bug! This is now properly placed at the top level check.
+            else if(topic === "home/status") {
                 const hwSpan = document.getElementById('hw-status');
                 if (payload === "ONLINE") {
-                hwSpan.innerText = "ONLINE";
-                hwSpan.style.color = "#39ff14"; // Green
+                    hwSpan.innerText = "ONLINE";
+                    hwSpan.style.color = "#39ff14"; // Green
                 } else {
-                hwSpan.innerText = "OFFLINE";
-                hwSpan.style.color = "#ff3333"; // Red
-                        }
-            } else if(topic === "home/telemetry") {
+                    hwSpan.innerText = "OFFLINE";
+                    hwSpan.style.color = "#ff3333"; // Red
+                }
+            } 
+            else if(topic === "home/telemetry") {
                 try {
                     const data = JSON.parse(payload);
                     if(data.temp) document.getElementById('temp-val').innerText = parseFloat(data.temp).toFixed(1) + " °C";
@@ -331,9 +331,7 @@
             timeout: 5,
             onSuccess: () => {
                 updateStatus("ONLINE", "#39ff14");
-                // Inside onSuccess() in connectMQTT(), add:
                 client.subscribe("home/status");
-                // Subscribe to sync real-time state across multiple browser devices
                 client.subscribe("home/relay1");
                 client.subscribe("home/relay2");
                 client.subscribe("home/relay3");
@@ -355,9 +353,11 @@
 
     function updateStatus(text, color) {
         const el = document.getElementById('status-text');
-        el.innerText = text;
-        el.style.color = color;
-        el.style.textShadow = `0 0 6px ${color}`;
+        if(el) {
+            el.innerText = text;
+            el.style.color = color;
+            el.style.textShadow = `0 0 6px ${color}`;
+        }
     }
 
     function handleSwitchClick(topic) {
@@ -365,12 +365,11 @@
         const targetId = Object.keys(topicToIdMap).find(key => topicToIdMap[key] === topicToIdMap[topic]);
         const element = document.getElementById(topicToIdMap[topic]);
         
-        // Optimistic toggle flip - will auto-correct if network drops
         const nextState = element.classList.contains('on') ? "0" : "1";
         
         const message = new Paho.MQTT.Message(nextState);
         message.destinationName = topic;
-        message.retained = true; // Retain on broker to maintain cross-device persistence
+        message.retained = true; 
         client.send(message);
     }
 
@@ -378,7 +377,6 @@
         document.getElementById('fader-angle').innerText = val;
         
         const now = Date.now();
-        // Throttle output slider events to max 1 message per 120ms to protect broker limits
         if (now - lastSliderTxTime > 120) {
             publishSliderValue(val);
             lastSliderTxTime = now;
@@ -389,7 +387,7 @@
         if(client && client.isConnected()) {
             const message = new Paho.MQTT.Message(val.toString());
             message.destinationName = "home/servo";
-            message.retained = true; // Retain servo angle so state stays fixed on reconnect
+            message.retained = true; 
             client.send(message);
         }
     }
